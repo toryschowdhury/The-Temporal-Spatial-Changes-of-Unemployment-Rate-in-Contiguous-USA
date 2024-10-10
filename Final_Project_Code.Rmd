@@ -1,0 +1,291 @@
+---
+title: "The Temporal-Spatial Changes of Unemployment Rate in Contiguous USA"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## "data cleaning"
+
+
+```{r}
+# Load necessary libraries
+
+library(tidyverse)
+library(dplyr)
+library(raster)          #raster()
+library(sf)              #st_read()
+library(ggspatial)       #annotation_scale,annotation_north_arrow
+library(ggnewscale)      #new_scale_color() 
+library(ggsn)            #scalebar()
+library(shiny)           #Shiny app
+library(plotly)          #plot_ly()
+library(gridExtra)       #grid.arrange()
+
+```
+
+
+```{r}
+# Set working directory
+setwd("~/FinalProject")
+
+# Read data files
+Unemployrate <-read_csv("/home/rstudio/FinalProject/unemployment_county.csv")
+head(Unemployrate)
+Crimerate<-read_csv("/home/rstudio/FinalProject/crime_and_incarceration_by_state.csv")
+head(Crimerate)
+States<-st_read("/home/rstudio/FinalProject/tl_2019_us_state.shp")
+
+
+
+```
+
+
+```{r}
+######## Focus on Contiguous USA
+Contiguous_state <- States%>% filter(STUSPS!="AK"& 
+                                       STUSPS!="AS"& 
+                                       STUSPS!="MP"& 
+                                       STUSPS!="PR"& 
+                                       STUSPS!="VI"& 
+                                       STUSPS!="HI"& 
+                                       STUSPS!="GU")
+
+###Check the length of states.49 is what we need.
+
+length(unique(Contiguous_state$STUSPS))
+
+
+```
+
+
+```{r}
+##Check the length of State
+unique(Unemployrate $State)
+```
+
+
+```{r}
+# Check the length of unique states in Unemployment data
+length(unique(Unemployrate $State))
+
+```
+
+
+```{r}
+# Clean Unemployment data
+## `summarise()` has grouped output by 'State'. 
+
+Unemployrate <-  Unemployrate %>% filter(State!="AK"& State!="HI") %>%
+  group_by(State,Year) %>% 
+  summarise(Totalforce=sum(`Labor Force`),
+            Totalemployed=sum(Employed),
+            Totalunemployed=sum(Unemployed),
+            Meanrate=mean(`Unemployment Rate`,rm.na=TRUE)
+            )
+
+```
+```{r}
+### Check the length of unique states in Unemployment data again
+ 
+length(unique(Unemployrate $State))
+```
+```{r}
+head(Unemployrate)
+```
+
+```{r}
+
+# Rename column and filter years
+
+colnames(Unemployrate)
+
+##Change the column name “State” into  "STUSPS" by using rename().Use   filter() to pick out year data from 2007 to 2014.
+Unemployrate <- Unemployrate %>% 
+  
+  filter(Year %in% c(2007:2014))
+
+head(Unemployrate)
+```
+
+
+
+```{r}
+
+unique(Crimerate$jurisdiction)
+```
+
+
+```{r}
+### Check the length of unique states in Crime data
+
+length(unique(Crimerate$jurisdiction))
+
+```
+
+
+```{r}
+head(Crimerate)
+
+```
+
+
+```{r}
+# Clean Crime data
+###Change the column name 
+
+Crimerate <-  Crimerate %>% 
+  rename("STUSPS"="jurisdiction") %>% 
+  rename("Year"="year") %>% 
+  filter(STUSPS!="FEDERAL"& STUSPS!="ALASKA"& STUSPS!="HAWAII") %>% 
+  filter(Year %in% c(2007:2014))
+
+##Recheck the data
+length(unique(Crimerate$STUSPS))
+```
+
+
+```{r}
+head(Crimerate)
+
+```
+
+
+```{r}
+###Changes the state names in the state column "STUSPS"
+Crimerate$STUSPS <- state.abb[match(str_to_title(Crimerate$STUSPS),state.name)]
+###Calculate the crimerate
+Crimerate <- Crimerate %>% 
+  mutate(Crimerate=(violent_crime_total/state_population)*100000) %>% 
+  dplyr::mutate_if(is.numeric, round, 1)
+```
+
+### Graphs 
+
+
+## Time Seies plots
+
+```{r}
+library(plotly)
+# Select the states
+selected_states <- c("IL", "CA", "ID", "IA")
+#head(Unemployrate)
+
+# Time Series plots for Unemployment Rate
+# Filter the data for the selected states
+Unemployrate_selected <- Unemployrate %>% filter(State %in% selected_states)
+head(Unemployrate_selected)
+# Create time series line plot using plotly
+fig <- plot_ly()
+#for(state in selected_states){
+ fig <- plot_ly( Unemployrate_selected, x = ~Year, y=~Meanrate, color=~State, type="scatter", mode="lines") %>% 
+   layout(title = "Time Series Visualization for Selected States",
+                      xaxis = list(title = "Year"),
+                      yaxis = list(title = "Unemployment Rate"))
+  fig
+
+```
+```{r}
+# Time Series plots for Crime Rate
+
+Crimerate_selected <- Crimerate %>% filter(STUSPS %in% selected_states)
+head(Crimerate_selected)
+fig2 <- plot_ly()
+#for(state in selected_states){
+ fig2 <- plot_ly( Crimerate_selected, x = ~Year, y=~Crimerate, color=~STUSPS , type="scatter", mode="lines") %>% 
+   layout(title = "Time Series Visualization for Selected States",
+                      xaxis = list(title = "Year"),
+                      yaxis = list(title = "Crime Rate"))
+  fig2
+
+```
+
+### scatter plot
+
+
+```{r}
+# Scatter plot for the year 2014
+Unemployrate_2014 <- Unemployrate %>% filter(Year == 2014)
+Crimerate_2014 <- Crimerate %>% filter(Year == 2014)
+
+```
+
+
+```{r}
+# Join datasets for the year 2014
+
+Crimerate <- Crimerate %>% rename(State = STUSPS)
+colnames(Crimerate_2014)
+Crimerate_2014 <- Crimerate_2014 %>% rename(State = STUSPS)
+
+
+colnames(Unemployrate_2014)
+colnames(Crimerate_2014)
+data_2014 <- left_join(Unemployrate_2014, Crimerate_2014, by = c("State", "Year"))
+```
+
+
+```{r}
+# Scatter plot for the relationship between Unemployment Rate and Crime Rate in 2014
+
+fig <- plot_ly(data_2014, x = ~Crimerate, y = ~Meanrate, type = "scatter", mode = "markers", color = ~State) %>%
+  layout(title = "Relationship between Unemployment Rate and Crime Rate in 2014",
+         xaxis = list(title = "Crime Rate"),
+         yaxis = list(title = "Unemployment Rate"))
+fig
+```
+### spatial plot
+
+```{r}
+# Spatial plot for Unemployment Rate in 2014
+# Join the data
+data_2014 <- left_join(Contiguous_state, Unemployrate_2014, by = c("STUSPS" = "State"))
+
+# Create the plot
+p <- ggplot() +
+  geom_sf(data = data_2014, aes(fill = Meanrate)) +
+  labs(title = "Unemployment Rate in 2014", 
+       fill = "Unemployment Rate",
+       x = "Longitude",
+       y = "Latitude") +
+  theme_minimal() +
+  coord_sf(datum = NA) +
+  north(data_2014, scale = 0.1, symbol = 3) +
+  scalebar(data_2014, dist = 100, dist_unit = "km", transform = TRUE)
+
+# Print the plot
+print(p)
+```
+
+
+```{r}
+# Spatial plot for Crime Rate in 2014
+
+p2 <- ggplot() +
+  geom_sf(data = data_2014, aes(fill = Crimerate)) +
+  labs(title = "Crime Rate in 2014", fill = "Crime Rate") +
+  theme_minimal()
+
+data_2014 <- left_join(Contiguous_state, Crimerate_2014, by = c("STUSPS" = "State"))
+
+p2 <- ggplot() +
+  geom_sf(data = data_2014, aes(fill = Crimerate)) +
+  labs(title = "Crime Rate in 2014", fill = "Crime Rate",
+       x = "Longitude",
+       y = "Latitude") +
+  theme_minimal()
+
+p2 <- p2 + north(data_2014) + scalebar(data_2014, dist = 100, dist_unit = "km", transform = TRUE)
+
+# Print the plots
+print(p2)
+```
+
+
+
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
